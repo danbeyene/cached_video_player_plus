@@ -48,4 +48,10 @@ abstract class VideoProxyServerInterface {
     required String cacheKey,
     required Map<String, String> headers,
   });
+
+  /// Suspends all active pre-cache downloads to prioritize active playback.
+  void suspendAllPreCacheDownloads();
+
+  /// Resumes all suspended pre-cache downloads.
+  void resumePreCacheDownloads();
 }

@@ -51,4 +51,10 @@ class VideoProxyServer implements VideoProxyServerInterface {
     required String cacheKey,
     required Map<String, String> headers,
   }) async {}
+
+  @override
+  void suspendAllPreCacheDownloads() {}
+
+  @override
+  void resumePreCacheDownloads() {}
 }

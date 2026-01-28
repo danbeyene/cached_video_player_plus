@@ -296,6 +296,34 @@ class VideoProxyServer implements VideoProxyServerInterface {
     return download != null && !download.isComplete && !download.isFailed;
   }
 
+  /// Suspends all active pre-cache downloads to prioritize active playback.
+  /// Call this when a video starts playing to give it full bandwidth.
+  @override
+  void suspendAllPreCacheDownloads() {
+    if (_preCacheDownloads.isEmpty) return;
+    
+    cvppLog('Suspending ${_preCacheDownloads.length} pre-cache downloads for active playback');
+    for (final download in _preCacheDownloads.values) {
+      download.suspend();
+    }
+  }
+
+  /// Resumes all suspended pre-cache downloads.
+  /// Call this after active video initialization completes.
+  @override
+  void resumePreCacheDownloads() {
+    int resumedCount = 0;
+    for (final download in _preCacheDownloads.values) {
+      if (download.isPaused) {
+        download.resume();
+        resumedCount++;
+      }
+    }
+    if (resumedCount > 0) {
+      cvppLog('Resumed $resumedCount pre-cache downloads');
+    }
+  }
+
   @override
   Future<void> startPreCacheDownload({
     required String url,
@@ -378,6 +406,9 @@ class VideoProxyServer implements VideoProxyServerInterface {
     // This will remove the pre-cache reader count.
     // Ideally we'd do atomic handover, but the abandon timer covers the gap.
     cancelPreCache(decodedKey);
+
+    // Suspend all pre-cache downloads to prioritize this active playback
+    suspendAllPreCacheDownloads();
 
     // Check if video is already cached
     final fileInfo = await _cacheManager.getFileFromCache(decodedKey);
@@ -614,6 +645,12 @@ class VideoProxyServer implements VideoProxyServerInterface {
     _activeDownloads.remove(decodedKey);
     _updateConcurrency();
 
+    // Resume pre-cache downloads only if this was an active playback download
+    // (not if it was a pre-cache download completing)
+    if (!_preCacheDownloads.containsKey(decodedKey)) {
+      resumePreCacheDownloads();
+    }
+
     // Delay cleanup to allow active streams to finish reading
     Future.delayed(const Duration(seconds: 30), () async {
       _sharedDownloads.remove(decodedKey);
@@ -708,6 +745,8 @@ class _SharedDownload {
 
   int _activeReaders = 0;
   Timer? _abandonTimer;
+  bool _isPaused = false;
+  bool get isPaused => _isPaused;
 
   Future<void> get metadataReady => _metadataCompleter.future;
 
@@ -947,6 +986,20 @@ class _SharedDownload {
     _subscription?.cancel();
     _isFailed = true;
     _bytesAvailableController.close();
+  }
+
+  /// Pauses the download to yield bandwidth to active playback.
+  void suspend() {
+    if (_isPaused || _isComplete || _isFailed) return;
+    _isPaused = true;
+    _subscription?.pause();
+  }
+
+  /// Resumes a paused download.
+  void resume() {
+    if (!_isPaused) return;
+    _isPaused = false;
+    _subscription?.resume();
   }
 
   Future<void> cleanup() async {
