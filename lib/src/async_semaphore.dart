@@ -17,7 +17,7 @@ class AsyncSemaphore {
   /// 
   /// If the limit is increased, waiting tasks are released immediately.
   void setMaxConcurrent(int newMax) {
-    if (newMax < 1) newMax = 1; // Minimum strictness
+    if (newMax < 0) newMax = 0; // Minimum strictness
     _maxConcurrent = newMax;
     
     // Release waiters if we have capacity

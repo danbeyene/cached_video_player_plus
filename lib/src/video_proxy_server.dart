@@ -407,14 +407,15 @@ class VideoProxyServer implements VideoProxyServerInterface {
     // Ideally we'd do atomic handover, but the abandon timer covers the gap.
     cancelPreCache(decodedKey);
 
-    // Suspend all pre-cache downloads to prioritize this active playback
-    suspendAllPreCacheDownloads();
-
     // Check if video is already cached
     final fileInfo = await _cacheManager.getFileFromCache(decodedKey);
     if (fileInfo != null) {
       return _serveFromCacheFile(fileInfo.file, request.headers['range']);
     }
+
+    // Suspend all pre-cache downloads to prioritize this active playback
+    // Only done if not serving from cache
+    suspendAllPreCacheDownloads();
 
     final headers = <String, String>{};
     if (headersParam.isNotEmpty) {
@@ -669,8 +670,23 @@ class VideoProxyServer implements VideoProxyServerInterface {
   }
 
   void _updateConcurrency() {
-    final isHeavyLoad = _activeDownloads.isNotEmpty;
-    AsyncSemaphore.instance.setMaxConcurrent(isHeavyLoad ? 1 : 4);
+    // Check if we have any downloads that are NOT pre-cache downloads
+    // This indicates an active user-initiated video playback
+    bool hasActivePlayback = false;
+    for (final key in _activeDownloads.keys) {
+      if (!_preCacheDownloads.containsKey(key)) {
+        hasActivePlayback = true;
+        break;
+      }
+    }
+
+    if (hasActivePlayback) {
+      // STRICT Priority: Block all new pre-cache tasks
+      AsyncSemaphore.instance.setMaxConcurrent(0);
+    } else {
+      // No active playback, allow normal concurrency
+      AsyncSemaphore.instance.setMaxConcurrent(4);
+    }
   }
 }
 
