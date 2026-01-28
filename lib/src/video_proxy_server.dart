@@ -684,8 +684,8 @@ class VideoProxyServer implements VideoProxyServerInterface {
       // STRICT Priority: Block all new pre-cache tasks
       AsyncSemaphore.instance.setMaxConcurrent(0);
     } else {
-      // No active playback, allow normal concurrency
-      AsyncSemaphore.instance.setMaxConcurrent(4);
+      // No active playback, allow limited concurrency (reduced to 2 to avoid strain)
+      AsyncSemaphore.instance.setMaxConcurrent(2);
     }
   }
 }
