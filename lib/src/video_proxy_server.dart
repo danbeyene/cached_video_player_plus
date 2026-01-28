@@ -802,6 +802,7 @@ class _SharedDownload {
         if (!_metadataCompleter.isCompleted) {
           _metadataCompleter.completeError('Upstream error: ${httpResponse.statusCode}');
         }
+        unawaited(cleanup());
         onFailed(this);
         return;
       }
@@ -822,6 +823,7 @@ class _SharedDownload {
         if (!_metadataCompleter.isCompleted) {
           _metadataCompleter.completeError('Could not determine content length');
         }
+        unawaited(cleanup());
         onFailed(this);
         return;
       }
@@ -888,6 +890,7 @@ class _SharedDownload {
             _downloadCompleter.completeError(error);
           }
           
+          unawaited(cleanup());
           onFailed(this);
         },
         cancelOnError: true,
@@ -898,6 +901,7 @@ class _SharedDownload {
       if (!_metadataCompleter.isCompleted) {
         _metadataCompleter.completeError(e);
       }
+      unawaited(cleanup());
       onFailed(this);
     }
   }
