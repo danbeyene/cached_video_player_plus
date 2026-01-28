@@ -26,7 +26,13 @@ class _BasicPlaybackPageState extends State<BasicPlaybackPage> {
       ),
       invalidateCacheIfOlderThan: const Duration(days: 42),
     );
+    final stopwatch = Stopwatch()..start();
+    debugPrint('Benchmark: Starting player initialization...');
+
     _player.initialize().then((_) {
+      stopwatch.stop();
+      debugPrint('Benchmark: Player initialization took: ${stopwatch.elapsedMilliseconds}ms');
+
       if (!mounted) return;
 
       _dataSourceType = _controller.dataSourceType;

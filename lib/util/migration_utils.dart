@@ -17,11 +17,10 @@
 /// }
 /// ```
 library;
-
-import 'package:flutter/foundation.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../src/cvpp_logger.dart';
 import '../src/cache_key_helpers.dart';
 
 /// Migrates cached video data from get_storage to shared_preferences.
@@ -90,21 +89,16 @@ Future<void> migrateCachedVideoDataToSharedPreferences() async {
     // Clear get_storage data
     await getStorage.erase();
 
-    if (kDebugMode) {
-      print(
-        'Cached Video Player Plus: Migrated $migratedCount cache entries from '
-        'get_storage to shared_preferences',
-      );
-    }
+    cvppLog(
+      'Migrated $migratedCount cache entries from '
+      'get_storage to shared_preferences',
+    );
   } catch (e) {
     // If migration fails, mark as completed to prevent retry loops
     final asyncPrefs = SharedPreferencesAsync();
     await asyncPrefs.setBool(migrationKey, false);
-    if (kDebugMode) {
-      print(
-        'Cached Video Player Plus: Migration failed or get_storage not '
-        'available: $e',
-      );
-    }
+    cvppLog(
+      'Migration failed or get_storage not available: $e',
+    );
   }
 }

@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:io' if (dart.library.html) 'stub_file.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -6,8 +6,12 @@ import 'package:video_player/video_player.dart';
 
 import 'cache_key_helpers.dart';
 import 'i_video_player_metadata_storage.dart';
+import 'pre_cache_handle.dart';
 import 'video_cache_manager.dart';
 import 'video_player_metadata_storage.dart';
+import 'video_proxy_server.dart' if (dart.library.html) 'video_proxy_server_stub.dart';
+import 'cvpp_logger.dart';
+import 'async_semaphore.dart';
 
 /// A video player that wraps [VideoPlayerController] with intelligent
 /// caching capabilities using [flutter_cache_manager].
@@ -253,6 +257,9 @@ class CachedVideoPlayerPlus {
   /// Whether the [CachedVideoPlayerPlus] instance is initialized.
   bool _isInitialized = false;
 
+  /// Whether the [CachedVideoPlayerPlus] instance has been disposed.
+  bool _isDisposed = false;
+
   /// Returns true if the [CachedVideoPlayerPlus] instance is initialized.
   ///
   /// This getter indicates whether [initialize] has been successfully called
@@ -280,17 +287,27 @@ class CachedVideoPlayerPlus {
   /// Returns a [Future] that completes when initialization is finished.
   Future<void> initialize() async {
     if (_isInitialized) {
-      _debugPrint('CachedVideoPlayerPlus is already initialized.');
+      cvppLog('CachedVideoPlayerPlus is already initialized.');
       return;
     }
 
     late String realDataSource;
     bool isCacheAvailable = false;
+    bool useProxy = false;
 
     if (_shouldUseCache) {
+      // If pre-cache started a shared download, playback will reuse it automatically.
+      // Just cancel the pre-cache handle (to release semaphore) but keep the download.
+      final hasActiveDownload = VideoProxyServer.instance.hasActiveDownload(_cacheKey);
+      if (hasActiveDownload) {
+        cvppLog('Reusing pre-cache download for: $dataSource');
+      }
+      // Cancel pre-cache handle to release semaphore, but download continues
+      VideoProxyServer.instance.cancelPreCache(_cacheKey);
+
       FileInfo? cachedFile = await _cacheManager.getFileFromCache(_cacheKey);
 
-      _debugPrint('Cached video of [$dataSource] is: ${cachedFile?.file.path}');
+      cvppLog('Cached video of [$dataSource] is: ${cachedFile?.file.path}');
 
       if (cachedFile != null) {
         final cachedElapsedMillis = await _metadataStorage.read(_cacheKey);
@@ -303,7 +320,7 @@ class CachedVideoPlayerPlus {
           );
           final difference = now.difference(cachedDate);
 
-          _debugPrint(
+          cvppLog(
             'Cache for [$dataSource] valid till: '
             '${cachedDate.add(invalidateCacheIfOlderThan)}',
           );
@@ -312,13 +329,29 @@ class CachedVideoPlayerPlus {
         }
 
         if (isCacheExpired) {
-          _debugPrint('Cache of [$dataSource] expired. Removing...');
+          cvppLog('Cache of [$dataSource] expired. Removing...');
           _cacheManager.removeFile(_cacheKey);
           cachedFile = null;
         }
       }
 
-      if (cachedFile == null) {
+      if (cachedFile != null) {
+        // Cache is available and valid - use local file
+        isCacheAvailable = true;
+        realDataSource = cachedFile.file.absolute.path;
+      } else if (VideoProxyServer.instance.isRunning) {
+        // No cache, but proxy is running - use proxy URL for single download
+        useProxy = true;
+        realDataSource = VideoProxyServer.instance.getProxyUrl(
+          originalUrl: dataSource,
+          cacheKey: _cacheKey,
+          headers: _authHeaders,
+        );
+        cvppLog('Using proxy URL for: $dataSource');
+      } else {
+        // No cache and proxy not running - fall back to direct streaming
+        // (legacy behavior: video_player streams while cacheManager downloads)
+        realDataSource = dataSource;
         _cacheManager
             .downloadFile(dataSource, authHeaders: _authHeaders, key: _cacheKey)
             .then((_) {
@@ -326,14 +359,9 @@ class CachedVideoPlayerPlus {
             _cacheKey,
             DateTime.timestamp().millisecondsSinceEpoch,
           );
-          _debugPrint('Cached video [$dataSource] successfully.');
+          cvppLog('Cached video [$dataSource] successfully.');
         });
-      } else {
-        isCacheAvailable = true;
       }
-
-      realDataSource =
-          isCacheAvailable ? cachedFile!.file.absolute.path : dataSource;
     } else {
       realDataSource = dataSource;
     }
@@ -346,13 +374,22 @@ class CachedVideoPlayerPlus {
           videoPlayerOptions: videoPlayerOptions,
           viewType: viewType,
         ),
-      DataSourceType.network when !isCacheAvailable =>
+      DataSourceType.network when !isCacheAvailable && !useProxy =>
         VideoPlayerController.networkUrl(
           Uri.parse(realDataSource),
           formatHint: formatHint,
           closedCaptionFile: closedCaptionFile,
           videoPlayerOptions: videoPlayerOptions,
           httpHeaders: httpHeaders,
+          viewType: viewType,
+        ),
+      DataSourceType.network when useProxy =>
+        // Proxy URL - use networkUrl without auth headers (proxy handles auth)
+        VideoPlayerController.networkUrl(
+          Uri.parse(realDataSource),
+          formatHint: formatHint,
+          closedCaptionFile: closedCaptionFile,
+          videoPlayerOptions: videoPlayerOptions,
           viewType: viewType,
         ),
       DataSourceType.contentUri => VideoPlayerController.contentUri(
@@ -379,6 +416,14 @@ class CachedVideoPlayerPlus {
   /// Call this method when the video player is no longer needed to free up
   /// resources and prevent memory leaks.
   Future<void> dispose() {
+    if (_isDisposed) return Future.value();
+    _isDisposed = true;
+    
+    // Cancel any in-progress proxy download for this video
+    if (_shouldUseCache && VideoProxyServer.instance.isRunning) {
+      VideoProxyServer.instance.cancelDownload(_cacheKey);
+    }
+    
     if (_isInitialized) {
       return _videoPlayerController.dispose();
     }
@@ -518,9 +563,24 @@ class CachedVideoPlayerPlus {
   /// Pre-caches a video file from the specified [url].
   ///
   /// This method can be used to pre-cache videos before they are played,
-  /// ensuring smooth playback even in low network conditions without
-  /// requiring to [initialize] a [CachedVideoPlayerPlus] instance, saving
-  /// memory and resources.
+  /// ensuring smooth playback even in low network conditions.
+  ///
+  /// The pre-cache will be automatically cancelled if the user starts playing
+  /// the same video before the pre-cache completes, avoiding duplicate downloads.
+  ///
+  /// Example:
+  /// ```dart
+  /// // Pre-cache videos at app startup or when anticipating playback
+  /// CachedVideoPlayerPlus.preCacheVideo(
+  ///   Uri.parse('https://example.com/video.mp4'),
+  /// );
+  ///
+  /// // Later, when playing - any in-progress pre-cache is auto-cancelled
+  /// final player = CachedVideoPlayerPlus.networkUrl(
+  ///   Uri.parse('https://example.com/video.mp4'),
+  /// );
+  /// await player.initialize();
+  /// ```
   ///
   /// The [invalidateCacheIfOlderThan] parameter controls cache expiration.
   /// Videos cached before this duration will be re-downloaded. Defaults to 69
@@ -548,61 +608,92 @@ class CachedVideoPlayerPlus {
     String? cacheKey,
     CacheManager? cacheManager,
     IVideoPlayerMetadataStorage? metadataStorage,
-  }) async {
+  }) {
     cacheManager ??= CachedVideoPlayerPlus.cacheManager;
     metadataStorage ??= CachedVideoPlayerPlus.metadataStorage;
+
+    // Capture non-null values for use in closure
+    final effectiveCacheManager = cacheManager;
+    final effectiveMetadataStorage = metadataStorage;
 
     final effectiveCacheKey = cacheKey != null
         ? getCustomCacheKey(cacheKey)
         : getCacheKey(url.toString());
 
-    // First check if the video is already cached
-    FileInfo? cachedFile = await cacheManager.getFileFromCache(
-      effectiveCacheKey,
+    final handle = PreCacheHandle(
+      cacheKey: effectiveCacheKey,
+      downloadTask: (checkCancelled) async {
+        // Wait for permit (throttled by active playback)
+        await AsyncSemaphore.instance.acquire();
+        try {
+          if (checkCancelled()) return;
+
+          // First check if the video is already cached
+          FileInfo? cachedFile = await effectiveCacheManager.getFileFromCache(
+            effectiveCacheKey,
+          );
+
+          if (cachedFile != null) {
+            final cachedElapsedMillis = await effectiveMetadataStorage.read(effectiveCacheKey);
+
+            bool isCacheExpired = true;
+            if (cachedElapsedMillis != null) {
+              final now = DateTime.timestamp();
+              final cachedDate = DateTime.fromMillisecondsSinceEpoch(
+                cachedElapsedMillis,
+              );
+              final difference = now.difference(cachedDate);
+
+              isCacheExpired = difference > invalidateCacheIfOlderThan;
+            }
+
+            if (isCacheExpired) {
+              cvppLog('Cache of [$url] expired. Removing...');
+              await effectiveCacheManager.removeFile(effectiveCacheKey);
+              cachedFile = null;
+            }
+          }
+
+          if (cachedFile == null) {
+            if (checkCancelled()) return;
+            
+            // Use shared download mechanism if proxy is running
+            // This allows playback to reuse pre-cache progress
+            if (VideoProxyServer.instance.isRunning) {
+              cvppLog('Pre-cache using shared download: $url');
+              await VideoProxyServer.instance.startPreCacheDownload(
+                url: url.toString(),
+                cacheKey: effectiveCacheKey,
+                headers: downloadHeaders,
+              );
+            } else {
+              // Fallback: use cacheManager directly (legacy behavior)
+              await effectiveCacheManager.downloadFile(
+                url.toString(),
+                key: effectiveCacheKey,
+                authHeaders: downloadHeaders,
+              );
+
+              await effectiveMetadataStorage.write(
+                effectiveCacheKey,
+                DateTime.timestamp().millisecondsSinceEpoch,
+              );
+            }
+
+            cvppLog('Pre-Cached video [$url] successfully.');
+          }
+        } finally {
+          AsyncSemaphore.instance.release();
+        }
+      },
     );
 
-    if (cachedFile != null) {
-      final cachedElapsedMillis = await metadataStorage.read(effectiveCacheKey);
+    // Register handle for automatic cancellation when video starts playing
+    VideoProxyServer.instance.registerPreCacheHandle(handle);
 
-      bool isCacheExpired = true;
-      if (cachedElapsedMillis != null) {
-        final now = DateTime.timestamp();
-        final cachedDate = DateTime.fromMillisecondsSinceEpoch(
-          cachedElapsedMillis,
-        );
-        final difference = now.difference(cachedDate);
-
-        isCacheExpired = difference > invalidateCacheIfOlderThan;
-      }
-
-      if (isCacheExpired) {
-        _debugPrint('Cache of [$url] expired. Removing...');
-        await cacheManager.removeFile(effectiveCacheKey);
-        cachedFile = null;
-      }
-    }
-
-    if (cachedFile == null) {
-      // If not cached, download and cache the video
-      await cacheManager.downloadFile(
-        url.toString(),
-        key: effectiveCacheKey,
-        authHeaders: downloadHeaders,
-      );
-
-      await metadataStorage.write(
-        effectiveCacheKey,
-        DateTime.timestamp().millisecondsSinceEpoch,
-      );
-
-      _debugPrint('Pre-Cached video [$url] successfully.');
-    }
+    // Return the future so callers can await completion
+    return handle.done;
   }
 }
 
-/// Checks if [kDebugMode] is enabled and prints a debug message.
-void _debugPrint(String? message, {int? wrapWidth}) {
-  if (kDebugMode) {
-    debugPrint(message, wrapWidth: wrapWidth);
-  }
-}
+

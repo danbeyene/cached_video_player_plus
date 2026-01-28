@@ -5,7 +5,7 @@ description: "Demonstrates how to use the cached_video_player_plus package."
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 environment:
-  sdk: ^3.0.0
+  sdk: ^3.10.7
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -21,15 +21,15 @@ dependencies:
     # The example app is bundled with the plugin so we use a path dependency on
     # the parent directory to use the current plugin's version.
     path: ../
-  chewie: ^1.12.1
+  chewie: ^1.13.0
   flutter:
     sdk: flutter
   flutter_cache_manager: ^3.4.1
   media_kit_libs_linux: ^1.2.1
   media_kit_libs_windows_video: ^1.0.11
-  shared_preferences: ^2.5.3
-  video_player: ^2.10.0
-  video_player_media_kit: ^1.0.6
+  shared_preferences: ^2.5.4
+  video_player: ^2.10.1
+  video_player_media_kit: ^2.0.0
 
 dependency_overrides:
   flutter_cache_manager:

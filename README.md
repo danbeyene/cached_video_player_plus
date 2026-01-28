@@ -166,6 +166,85 @@ class _VideoExampleState extends State<VideoExample> {
 }
 ```
 
+### 5. Android Configuration 🤖
+
+Because we use a local proxy server to intercept and cache the video stream, you need to allow cleartext traffic (HTTP) for `127.0.0.1`.
+
+**The Secure Way (Recommended) 🛡️**
+
+1. Create a file `android/app/src/main/res/xml/network_security_config.xml`:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
+```
+
+2. Point to this config in your `AndroidManifest.xml` (usually `android/app/src/main/AndroidManifest.xml`):
+
+```xml
+<application
+    ...
+    android:icon="@mipmap/ic_launcher"
+    android:label="your_app_name"
+    android:networkSecurityConfig="@xml/network_security_config"> <!-- Add this line! -->
+```
+
+_(Alternatively, you can use `android:usesCleartextTraffic="true"` for a quick fix, but that allows **all** unencrypted traffic, which is not recommended for production.)_
+
+Good news! iOS automatically allows HTTP traffic to `localhost` (127.0.0.1), so **no configuration is needed** for this to work on iOS. ATS (App Transport Security) is chill about localhost. 😎
+
+### 7. Lifecycle Best Practices ♻️
+
+**Handle app lifecycle for better resource management:**
+
+```dart
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    VideoProxyServer.instance.stop();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Handle app lifecycle for resource management:
+    // - Pauses pre-cache downloads when app is backgrounded (saves battery/bandwidth)
+    // - Pre-cache resumes automatically when app is foregrounded
+    VideoProxyServer.instance.handleAppLifecycle(state);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(home: YourHomePage());
+  }
+}
+```
+
+> [!IMPORTANT]
+> **Do NOT stop the `VideoProxyServer` when the app is paused/backgrounded.**
+>
+> The proxy server is lightweight and binds to `localhost`. If you stop it and restart it when the app resumes, it will bind to a **new random port**. However, any paused video players will still try to connect to the **old port**, causing playback to fail on resume.
+>
+> **Recommendation:** Start the proxy once in `main()` and let it run until the app is fully terminated.
+
 ## 🌍 Platform Support
 
 |  Platform   | Caching | Playback | Notes                                    |
