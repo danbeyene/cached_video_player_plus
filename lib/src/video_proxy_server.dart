@@ -936,11 +936,9 @@ class _SharedDownload {
       }
     }
     
-    if (!waitForDownload) {
-      return _fetchDirect(start, end);
-    }
-    
-    return [];
+    // Bytes not available (download cancelled/restarted or not yet reached)
+    // Fall back to direct HTTP Range request
+    return _fetchDirect(start, end);
   }
 
   Future<List<int>> _readFromDisk(int start, int end) async {
