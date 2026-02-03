@@ -907,13 +907,26 @@ class _SharedDownload {
   }
 
   Future<List<int>> getBytes(int start, int end, {bool waitForDownload = false}) async {
-    if (waitForDownload) {
-      while (_bytesDownloaded <= end && !_isComplete && !_isFailed) {
-        try {
-          await _bytesAvailableController.stream.first;
-        } catch (e) {
-          break;
+    if (waitForDownload && _bytesDownloaded <= end && !_isComplete && !_isFailed) {
+      // Use continuous subscription to avoid missing broadcast stream events
+      final completer = Completer<void>();
+      StreamSubscription<int>? subscription;
+      subscription = _bytesAvailableController.stream.listen((downloadedBytes) {
+        if (downloadedBytes > end || _isComplete || _isFailed) {
+          subscription?.cancel();
+          if (!completer.isCompleted) completer.complete();
         }
+      }, onDone: () {
+        if (!completer.isCompleted) completer.complete();
+      }, onError: (_) {
+        if (!completer.isCompleted) completer.complete();
+      });
+      
+      // Check again in case condition changed before subscription
+      if (_bytesDownloaded > end || _isComplete || _isFailed) {
+        subscription.cancel();
+      } else {
+        await completer.future;
       }
     }
     
