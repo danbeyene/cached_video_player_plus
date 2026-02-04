@@ -22,9 +22,8 @@ class _ChewieIntegrationPageState extends State<ChewieIntegrationPage> {
 
     _player = CachedVideoPlayerPlus.networkUrl(
       Uri.parse(
-        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
       ),
-      invalidateCacheIfOlderThan: const Duration(days: 42),
     );
     _player.initialize().then((_) {
       if (!mounted) return;

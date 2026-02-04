@@ -1,4 +1,4 @@
-import 'pre_cache_handle.dart';
+
 import 'video_proxy_server_interface.dart';
 
 /// Web/Stub implementation of VideoProxyServer.
@@ -31,21 +31,6 @@ class VideoProxyServer implements VideoProxyServerInterface {
   }) => originalUrl;
 
   @override
-  void registerPreCacheHandle(PreCacheHandle handle) {}
-
-  @override
-  void cancelPreCache(String cacheKey) {}
-
-  @override
-  bool isPreCaching(String cacheKey) => false;
-
-  @override
-  void cancelDownload(String cacheKey) {}
-
-  @override
-  bool hasActiveDownload(String cacheKey) => false;
-
-  @override
   Future<void> startPreCacheDownload({
     required String url,
     required String cacheKey,
@@ -53,8 +38,5 @@ class VideoProxyServer implements VideoProxyServerInterface {
   }) async {}
 
   @override
-  void suspendAllPreCacheDownloads() {}
-
-  @override
-  void resumePreCacheDownloads() {}
+  Future<void> removeCache(String url) async {}
 }

@@ -1,8 +1,6 @@
 import 'package:cached_video_player_plus/cached_video_player_plus.dart';
-import 'package:cached_video_player_plus/util/migration_utils.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'pages/advance_cache_management_page.dart';
@@ -13,17 +11,8 @@ import 'pages/pre_caching_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Migrate cached video data from get_storage to shared_preferences
-  // This should be called ONCE before removing get_storage dependency
-  await migrateCachedVideoDataToSharedPreferences();
-
   // Windows and Linux support using `video_player_media_kit` plugin
   VideoPlayerMediaKit.ensureInitialized(windows: true, linux: true);
-
-  // Inject SharedPreferences instance into the library
-  // This allows sharing the same instance with your app
-  final prefs = await SharedPreferences.getInstance();
-  VideoPlayerMetadataStorage.setSharedPreferences(prefs);
 
   // Initialize the video proxy server for single-download caching
   // This enables videos to stream while being cached simultaneously

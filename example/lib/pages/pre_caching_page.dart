@@ -118,7 +118,7 @@ class _PreCachingPageState extends State<PreCachingPage> {
             Expanded(
               child: ListView.separated(
                 itemCount: _videos.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                separatorBuilder: (_, index) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
                   final videoInfo = _videos[index];
                   return _VideoOptionTile(

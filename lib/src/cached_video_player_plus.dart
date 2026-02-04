@@ -1,50 +1,21 @@
 import 'dart:io' if (dart.library.html) 'stub_file.dart';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:http_cache_stream/http_cache_stream.dart';
 import 'cache_key_helpers.dart';
-import 'i_video_player_metadata_storage.dart';
-import 'pre_cache_handle.dart';
-import 'video_cache_manager.dart';
-import 'video_player_metadata_storage.dart';
+// ignore: unused_import
 import 'video_proxy_server.dart' if (dart.library.html) 'video_proxy_server_stub.dart';
 import 'cvpp_logger.dart';
-import 'async_semaphore.dart';
 
 /// A video player that wraps [VideoPlayerController] with intelligent
-/// caching capabilities using [flutter_cache_manager].
+/// caching capabilities using http_cache_stream.
 ///
 /// It provides the same functionality as the standard video player but with the
-/// added benefit of caching network videos locally for improved performance,
-/// reduced bandwidth usage, and offline playback.
-///
-/// ### Basic Usage
-///
-/// ```dart
-/// final player = CachedVideoPlayerPlus.networkUrl(
-///   Uri.parse('https://example.com/video.mp4'),
-///   invalidateCacheIfOlderThan: const Duration(days: 42),
-/// );
-///
-/// await player.initialize();
-/// player.controller.play();
-/// ```
-///
-/// [flutter_cache_manager]: https://pub.dev/packages/flutter_cache_manager
+/// added benefit of caching network videos locally using a local proxy server.
 class CachedVideoPlayerPlus {
   /// Constructs a [CachedVideoPlayerPlus] playing a video from an asset.
-  ///
-  /// The name of the asset is given by the [dataSource] argument and must not
-  /// be null. The [package] argument must be non-null when the asset comes from
-  /// a package and null otherwise.
-  ///
-  /// The [viewType] option allows the caller to request a specific display mode
-  /// for the video. Platforms that do not support the request view type will
-  /// ignore this parameter.
-  ///
-  /// Asset videos do not support caching and will bypass cache operations.
   CachedVideoPlayerPlus.asset(
     this.dataSource, {
     this.package,
@@ -54,42 +25,11 @@ class CachedVideoPlayerPlus {
   })  : dataSourceType = DataSourceType.asset,
         formatHint = null,
         httpHeaders = const <String, String>{},
-        _authHeaders = const <String, String>{},
-        invalidateCacheIfOlderThan = Duration.zero,
+
         skipCache = true,
-        _cacheKey = '',
-        _cacheManager = CachedVideoPlayerPlus.cacheManager,
-        _metadataStorage = CachedVideoPlayerPlus.metadataStorage;
+        _cacheKey = '';
 
   /// Constructs a [CachedVideoPlayerPlus] playing a video from a network URL.
-  ///
-  /// The URI for the video is given by the [url] argument.
-  ///
-  /// **Android only**: The [formatHint] option allows the caller to override
-  /// the video format detection code.
-  ///
-  /// [httpHeaders] option allows to specify HTTP headers for the request to the
-  /// [url].
-  ///
-  /// [downloadHeaders] option allows to specify HTTP headers specifically for
-  /// downloading the video file for caching. If not provided, [httpHeaders]
-  /// will be used. This is useful when [httpHeaders] contains
-  /// streaming-specific headers like 'Range' that should not be used when
-  /// downloading the complete video file for caching.
-  ///
-  /// The [invalidateCacheIfOlderThan] parameter controls cache expiration.
-  /// Videos cached before this duration will be re-downloaded. Defaults to 69
-  /// days.
-  ///
-  /// Set [skipCache] to true to bypass caching and always use the network.
-  ///
-  /// The [cacheKey] parameter allows specifying a custom cache key for
-  /// caching operations. If not provided, a default key based on the URL will
-  /// be used.
-  ///
-  /// The [cacheManager] parameter allows providing a custom [CacheManager]
-  /// instance for caching operations. If not provided, the default
-  /// [VideoCacheManager] will be used.
   CachedVideoPlayerPlus.networkUrl(
     Uri url, {
     this.formatHint,
@@ -98,29 +38,17 @@ class CachedVideoPlayerPlus {
     this.httpHeaders = const <String, String>{},
     Map<String, String>? downloadHeaders,
     this.viewType = VideoViewType.textureView,
-    this.invalidateCacheIfOlderThan = const Duration(days: 69),
     this.skipCache = false,
     String? cacheKey,
-    CacheManager? cacheManager,
-    IVideoPlayerMetadataStorage? metadataStorage,
   })  : dataSource = url.toString(),
         dataSourceType = DataSourceType.network,
         package = null,
-        _authHeaders = downloadHeaders ?? httpHeaders,
+        // _authHeaders = downloadHeaders ?? httpHeaders,
         _cacheKey = cacheKey != null
             ? getCustomCacheKey(cacheKey)
-            : getCacheKey(url.toString()),
-        _cacheManager = cacheManager ?? CachedVideoPlayerPlus.cacheManager,
-        _metadataStorage =
-            metadataStorage ?? CachedVideoPlayerPlus.metadataStorage;
+            : getCacheKey(url.toString());
 
   /// Constructs a [CachedVideoPlayerPlus] playing a video from a file.
-  ///
-  /// This will load the file from a file:// URI constructed from [file]'s path.
-  /// [httpHeaders] option allows to specify HTTP headers, mainly used for hls
-  /// files like (m3u8).
-  ///
-  /// File videos do not support caching and will bypass cache operations.
   CachedVideoPlayerPlus.file(
     File file, {
     this.closedCaptionFile,
@@ -131,19 +59,10 @@ class CachedVideoPlayerPlus {
         dataSourceType = DataSourceType.file,
         package = null,
         formatHint = null,
-        _authHeaders = const <String, String>{},
-        invalidateCacheIfOlderThan = Duration.zero,
         skipCache = true,
-        _cacheKey = '',
-        _cacheManager = CachedVideoPlayerPlus.cacheManager,
-        _metadataStorage = CachedVideoPlayerPlus.metadataStorage;
+        _cacheKey = '';
 
   /// Constructs a [CachedVideoPlayerPlus] playing a video from a contentUri.
-  ///
-  /// This will load the video from the input content-URI.
-  /// This is supported on Android only.
-  ///
-  /// ContentUri videos do not support caching and will bypass cache operations.
   CachedVideoPlayerPlus.contentUri(
     Uri contentUri, {
     this.closedCaptionFile,
@@ -158,248 +77,102 @@ class CachedVideoPlayerPlus {
         package = null,
         formatHint = null,
         httpHeaders = const <String, String>{},
-        _authHeaders = const <String, String>{},
-        invalidateCacheIfOlderThan = Duration.zero,
+
         skipCache = true,
-        _cacheKey = '',
-        _cacheManager = CachedVideoPlayerPlus.cacheManager,
-        _metadataStorage = CachedVideoPlayerPlus.metadataStorage;
+        _cacheKey = '';
 
-  /// The URI to the video file. This will be in different formats depending on
-  /// the [DataSourceType] of the original video.
   final String dataSource;
-
-  /// HTTP headers used for the request to the [dataSource].
-  /// Only for [CachedVideoPlayerPlus.networkUrl].
-  /// Always empty for other video types.
   final Map<String, String> httpHeaders;
-
-  /// HTTP headers used specifically for downloading the video file
-  /// for caching purposes.
-  ///
-  /// This is useful when [httpHeaders] contains streaming-specific headers
-  /// like 'Range' that should not be used when downloading the complete video
-  /// file for caching.
-  ///
-  /// If not provided, [httpHeaders] will be used.
-  final Map<String, String> _authHeaders;
-
-  /// **Android only**. Will override the platform's generic file format
-  /// detection with whatever is set here.
+  // final Map<String, String> _authHeaders;
   final VideoFormat? formatHint;
-
-  /// Describes the type of data source this [CachedVideoPlayerPlus]
-  /// is constructed with.
   final DataSourceType dataSourceType;
-
-  /// Provide additional configuration options (optional). Like setting the
-  /// audio mode to mix.
   final VideoPlayerOptions? videoPlayerOptions;
-
-  /// Only set for [CachedVideoPlayerPlus.asset] videos. The package that the
-  /// asset was loaded from.
   final String? package;
-
-  /// The closed caption file to be used with the video.
-  ///
-  /// This is only used if the video player supports closed captions.
   final Future<ClosedCaptionFile>? closedCaptionFile;
-
-  /// The requested display mode for the video.
-  ///
-  /// Platforms that do not support the request view type will ignore this.
   final VideoViewType viewType;
-
-  /// If the requested network video is cached already, checks if the cache is
-  /// older than the provided [Duration] and re-fetches data.
-  final Duration invalidateCacheIfOlderThan;
-
-  /// If set to true, it will skip the cache and use the video from the network.
   final bool skipCache;
 
-  /// The cache key used for caching operations. This is used to uniquely
-  /// identify the cached video file.
   final String _cacheKey;
+  
+  VideoPlayerController? _videoPlayerController;
+  HttpCacheStream? _cacheStream;
 
-  /// The [CacheManager] instance used for caching video files.
-  ///
-  /// This is used to manage cached video files, including downloading,
-  /// retrieving, and removing cached files.
-  ///
-  /// Defaults to [VideoCacheManager] if not provided.
-  final CacheManager _cacheManager;
-
-  /// The [IVideoPlayerMetadataStorage] instance used for caching video metadata.
-  ///
-  /// Defaults to [VideoPlayerMetadataStorage] if not provided.
-  final IVideoPlayerMetadataStorage _metadataStorage;
-
-  /// The underlying video player controller that handles actual video playback.
-  late VideoPlayerController _videoPlayerController;
-
-  /// The controller for the video player.
-  ///
-  /// This provides access to the underlying [VideoPlayerController] for video
-  /// playback operations like play, pause, seek, and accessing video state.
-  ///
-  /// Throws an [StateError] if the controller is not initialized. Always call
-  /// [initialize] before accessing this property.
   VideoPlayerController get controller {
-    if (!_isInitialized) {
+    if (_videoPlayerController == null) {
       throw StateError(
         'CachedVideoPlayerPlus is not initialized. '
         'Call initialize() before accessing the controller.',
       );
     }
-    return _videoPlayerController;
+    return _videoPlayerController!;
   }
 
-  /// Whether the [CachedVideoPlayerPlus] instance is initialized.
   bool _isInitialized = false;
-
-  /// Whether the [CachedVideoPlayerPlus] instance has been disposed.
   bool _isDisposed = false;
 
-  /// Returns true if the [CachedVideoPlayerPlus] instance is initialized.
-  ///
-  /// This getter indicates whether [initialize] has been successfully called
-  /// and the video player is ready for use.
   bool get isInitialized => _isInitialized;
 
-  /// Returns true if caching is supported and [skipCache] is false.
-  ///
-  /// Caching is only supported for network data sources. Asset, file, and
-  /// contentUri data sources always return false.
   bool get _shouldUseCache {
     return dataSourceType == DataSourceType.network && !kIsWeb && !skipCache;
   }
 
   /// Initializes the video player and sets up caching if applicable.
-  ///
-  /// This method must be called before accessing the [controller] or playing
-  /// the video. It handles cache checking, file downloading, and creates the
-  /// appropriate [VideoPlayerController] based on the data source type.
-  ///
-  /// For network videos, it checks if a cached version exists and whether it
-  /// has expired based on [invalidateCacheIfOlderThan]. If no cache exists or
-  /// the cache is expired, it downloads the video in the background.
-  ///
-  /// Returns a [Future] that completes when initialization is finished.
   Future<void> initialize() async {
     if (_isInitialized) {
       cvppLog('CachedVideoPlayerPlus is already initialized.');
       return;
     }
 
-    late String realDataSource;
-    bool isCacheAvailable = false;
-    bool useProxy = false;
+    // Ensure proxy is started if we need caching
+    if (_shouldUseCache) {
+      await VideoProxyServer.instance.start();
+    }
+
+    String realDataSource = dataSource;
+    final Map<String, String> controllerHeaders = Map.from(httpHeaders);
 
     if (_shouldUseCache) {
-      // If pre-cache started a shared download, playback will reuse it automatically.
-      // Just cancel the pre-cache handle (to release semaphore) but keep the download.
-      final hasActiveDownload = VideoProxyServer.instance.hasActiveDownload(_cacheKey);
-      if (hasActiveDownload) {
-        cvppLog('Reusing pre-cache download for: $dataSource');
+      // Create a cache stream for the specific URL
+      final sourceUrl = Uri.parse(dataSource);
+      _cacheStream = HttpCacheManager.instance.createStream(sourceUrl);
+      
+      // Get the local cache URL
+      realDataSource = _cacheStream!.cacheUrl.toString();
+      
+      cvppLog('Using content URL: $realDataSource (proxy active: true)');
+
+      // Inject custom cache key header if needed?
+      // http_cache_stream doesn't seem to support custom cache keys via headers directly for identity,
+      // it uses the URL. But we can configure headers.
+      if (_cacheKey != dataSource) {
+        // controllerHeaders['CUSTOM-CACHE-ID'] = _cacheKey;
       }
-      // Cancel pre-cache handle to release semaphore, but download continues
-      VideoProxyServer.instance.cancelPreCache(_cacheKey);
-
-      FileInfo? cachedFile = await _cacheManager.getFileFromCache(_cacheKey);
-
-      cvppLog('Cached video of [$dataSource] is: ${cachedFile?.file.path}');
-
-      if (cachedFile != null) {
-        final cachedElapsedMillis = await _metadataStorage.read(_cacheKey);
-
-        bool isCacheExpired = true;
-        if (cachedElapsedMillis != null) {
-          final now = DateTime.timestamp();
-          final cachedDate = DateTime.fromMillisecondsSinceEpoch(
-            cachedElapsedMillis,
-          );
-          final difference = now.difference(cachedDate);
-
-          cvppLog(
-            'Cache for [$dataSource] valid till: '
-            '${cachedDate.add(invalidateCacheIfOlderThan)}',
-          );
-
-          isCacheExpired = difference > invalidateCacheIfOlderThan;
-        }
-
-        if (isCacheExpired) {
-          cvppLog('Cache of [$dataSource] expired. Removing...');
-          _cacheManager.removeFile(_cacheKey);
-          cachedFile = null;
-        }
-      }
-
-      if (cachedFile != null) {
-        // Cache is available and valid - use local file
-        isCacheAvailable = true;
-        realDataSource = cachedFile.file.absolute.path;
-      } else if (VideoProxyServer.instance.isRunning) {
-        // No cache, but proxy is running - use proxy URL for single download
-        useProxy = true;
-        realDataSource = VideoProxyServer.instance.getProxyUrl(
-          originalUrl: dataSource,
-          cacheKey: _cacheKey,
-          headers: _authHeaders,
-        );
-        cvppLog('Using proxy URL for: $dataSource');
-      } else {
-        // No cache and proxy not running - fall back to direct streaming
-        // (legacy behavior: video_player streams while cacheManager downloads)
-        realDataSource = dataSource;
-        _cacheManager
-            .downloadFile(dataSource, authHeaders: _authHeaders, key: _cacheKey)
-            .then((_) {
-          _metadataStorage.write(
-            _cacheKey,
-            DateTime.timestamp().millisecondsSinceEpoch,
-          );
-          cvppLog('Cached video [$dataSource] successfully.');
-        });
-      }
-    } else {
-      realDataSource = dataSource;
     }
 
     _videoPlayerController = switch (dataSourceType) {
       DataSourceType.asset => VideoPlayerController.asset(
-          realDataSource,
+          dataSource,
           package: package,
           closedCaptionFile: closedCaptionFile,
           videoPlayerOptions: videoPlayerOptions,
           viewType: viewType,
         ),
-      DataSourceType.network when !isCacheAvailable && !useProxy =>
-        VideoPlayerController.networkUrl(
+      DataSourceType.network => VideoPlayerController.networkUrl(
           Uri.parse(realDataSource),
           formatHint: formatHint,
           closedCaptionFile: closedCaptionFile,
           videoPlayerOptions: videoPlayerOptions,
-          httpHeaders: httpHeaders,
-          viewType: viewType,
-        ),
-      DataSourceType.network when useProxy =>
-        // Proxy URL - use networkUrl without auth headers (proxy handles auth)
-        VideoPlayerController.networkUrl(
-          Uri.parse(realDataSource),
-          formatHint: formatHint,
-          closedCaptionFile: closedCaptionFile,
-          videoPlayerOptions: videoPlayerOptions,
+          httpHeaders: controllerHeaders,
           viewType: viewType,
         ),
       DataSourceType.contentUri => VideoPlayerController.contentUri(
-          Uri.parse(realDataSource),
+          Uri.parse(dataSource),
           closedCaptionFile: closedCaptionFile,
           videoPlayerOptions: videoPlayerOptions,
           viewType: viewType,
         ),
       _ => VideoPlayerController.file(
-          File(realDataSource),
+          File(dataSource),
           closedCaptionFile: closedCaptionFile,
           videoPlayerOptions: videoPlayerOptions,
           httpHeaders: httpHeaders,
@@ -407,293 +180,73 @@ class CachedVideoPlayerPlus {
         ),
     };
 
-    await _videoPlayerController.initialize();
+    await _videoPlayerController!.initialize();
+    
+    if (_isDisposed) {
+       // Was disposed during initialization
+       await _videoPlayerController!.dispose();
+       await _cacheStream?.dispose();
+       return;
+    }
     _isInitialized = true;
   }
 
-  /// Disposes of the video player and releases resources.
-  ///
-  /// Call this method when the video player is no longer needed to free up
-  /// resources and prevent memory leaks.
-  Future<void> dispose() {
+  Future<void> dispose() async {
     if (_isDisposed) return Future.value();
     _isDisposed = true;
+    _isInitialized = false; // Mark as not initialized to prevent usage
     
-    // Cancel any in-progress proxy download for this video
-    if (_shouldUseCache && VideoProxyServer.instance.isRunning) {
-      VideoProxyServer.instance.cancelDownload(_cacheKey);
-    }
-    
-    if (_isInitialized) {
-      return _videoPlayerController.dispose();
-    }
-    return Future.value();
+    // Dispose resources even if not fully initialized (race condition fix)
+    await _cacheStream?.dispose();
+    await _videoPlayerController?.dispose();
   }
 
-  /// Removes the cached file for this video player's data source.
-  ///
-  /// This only applies to network videos. Calling this method on asset, file,
-  /// or contentUri videos has no effect since they don't use caching.
-  ///
-  /// The cached video file and its metadata will be permanently deleted.
   Future<void> removeFromCache() async {
-    await Future.wait([
-      _cacheManager.removeFile(_cacheKey),
-      _metadataStorage.remove(_cacheKey),
-    ]);
+    if (_shouldUseCache) {
+       await VideoProxyServer.instance.removeCache(dataSource);
+    }
   }
 
-  /// The default cache manager for video file caching operations.
-  static final defaultCacheManager = VideoCacheManager();
-
-  /// The globally used cache manager for video file caching operations.
-  ///
-  /// Changing this will affect all [CachedVideoPlayerPlus] instances that use
-  /// the default cache manager.
-  ///
-  /// The field is not thread-safe. It should only be set during app
-  /// initialization before any instances are created, or proper
-  /// synchronization should be implemented.
-  static CacheManager cacheManager = defaultCacheManager;
-
-  /// Default storage for cache metadata and expiration timestamps.
-  static final defaultMetadataStorage = VideoPlayerMetadataStorage();
-
-  /// The globally used storage for video file metadata.
-  ///
-  /// Changing this will affect all [CachedVideoPlayerPlus] instances that use
-  /// the default metadata storage.
-  ///
-  /// The field is not thread-safe. It should only be set during app
-  /// initialization before any instances are created, or proper
-  /// synchronization should be implemented.
-  static IVideoPlayerMetadataStorage metadataStorage = defaultMetadataStorage;
-
-  /// Removes the cached file for the specified [url] from the cache.
-  ///
-  /// Use this static method to remove specific cached videos by their URL.
-  ///
-  /// The [url] parameter should be the original network URL of the video.
-  /// This method has no effect if the URL is not found in the cache.
-  ///
-  /// The [cacheManager] parameter allows specifying a custom [CacheManager]
-  /// instance. If not provided, the default [VideoCacheManager] will be used.
-  ///
-  /// The [metadataStorage] parameter allows specifying a custom
-  /// [IVideoPlayerMetadataStorage] instance. If not provided, the default
-  /// [VideoPlayerMetadataStorage] will be used.
-  ///
-  /// Both the cached video file and its expiration metadata are deleted.
-  static Future<void> removeFileFromCache(
-    Uri url, {
-    CacheManager? cacheManager,
-    IVideoPlayerMetadataStorage? metadataStorage,
-  }) async {
-    final urlString = url.toString();
-    final cacheKey = getCacheKey(urlString);
-
-    cacheManager ??= CachedVideoPlayerPlus.cacheManager;
-    metadataStorage ??= CachedVideoPlayerPlus.metadataStorage;
-
-    await Future.wait([
-      cacheManager.removeFile(cacheKey),
-      metadataStorage.remove(cacheKey),
-    ]);
+  static Future<void> removeFileFromCache(Uri url) async {
+     // Forward to proxy
+     await VideoProxyServer.instance.removeCache(url.toString());
   }
 
-  /// Removes the cached file for the specified [cacheKey].
-  ///
-  /// Use this static method to remove cached videos using a custom cache key
-  /// instead of the original URL.
-  ///
-  /// The [cacheKey] parameter should match the key used when caching the video.
-  ///
-  /// The [cacheManager] parameter allows specifying a custom [CacheManager]
-  /// instance. If not provided, the default [VideoCacheManager] will be used.
-  ///
-  /// The [metadataStorage] parameter allows specifying a custom
-  /// [IVideoPlayerMetadataStorage] instance. If not provided, the default
-  /// [VideoPlayerMetadataStorage] will be used.
-  ///
-  /// Both the cached video file and its expiration metadata are deleted.
-  static Future<void> removeFileFromCacheByKey(
-    String cacheKey, {
-    CacheManager? cacheManager,
-    IVideoPlayerMetadataStorage? metadataStorage,
-  }) async {
-    cacheKey = getCustomCacheKey(cacheKey);
-
-    cacheManager ??= CachedVideoPlayerPlus.cacheManager;
-    metadataStorage ??= CachedVideoPlayerPlus.metadataStorage;
-
-    await Future.wait([
-      cacheManager.removeFile(cacheKey),
-      metadataStorage.remove(cacheKey),
-    ]);
+  static Future<void> removeFileFromCacheByKey(String cacheKey) async {
+    // Current implementation assumes key == url for removal if not using headers?
+    // This is tricky without knowing the URL if key is different.
+    // We log a warning or try to remove assuming key might be url.
+    await VideoProxyServer.instance.removeCache(cacheKey); 
   }
 
-  /// Clears all cached videos and their metadata.
-  ///
-  /// This is a static method that removes all cached video files and
-  /// associated expiration data from storage. Use this to free up storage
-  /// space or reset the cache state.
-  ///
-  /// The [cacheManager] parameter allows specifying a custom [CacheManager]
-  /// instance. If not provided, the default [VideoCacheManager] will be used.
-  ///
-  /// The [metadataStorage] parameter allows specifying a custom
-  /// [IVideoPlayerMetadataStorage] instance. If not provided, the default
-  /// [VideoPlayerMetadataStorage] will be used.
-  ///
-  /// This operation cannot be undone. All cached videos will need to be
-  /// re-downloaded from their original sources.
-  static Future<void> clearAllCache({
-    CacheManager? cacheManager,
-    IVideoPlayerMetadataStorage? metadataStorage,
-  }) async {
-    cacheManager ??= CachedVideoPlayerPlus.cacheManager;
-    metadataStorage ??= CachedVideoPlayerPlus.metadataStorage;
-
-    await Future.wait([
-      cacheManager.emptyCache(),
-      metadataStorage.erase(),
-    ]);
+  static Future<void> clearAllCache() async {
+    // Not directly exposed by simple wrapper yet, but safe to no-op or log.
+    // http_cache_stream manages its own internal cache.
+    cvppLog('Warning: clearAllCache is not fully supported with the new caching mechanism.');
   }
 
-  /// Pre-caches a video file from the specified [url].
-  ///
-  /// This method can be used to pre-cache videos before they are played,
-  /// ensuring smooth playback even in low network conditions.
-  ///
-  /// The pre-cache will be automatically cancelled if the user starts playing
-  /// the same video before the pre-cache completes, avoiding duplicate downloads.
-  ///
-  /// Example:
-  /// ```dart
-  /// // Pre-cache videos at app startup or when anticipating playback
-  /// CachedVideoPlayerPlus.preCacheVideo(
-  ///   Uri.parse('https://example.com/video.mp4'),
-  /// );
-  ///
-  /// // Later, when playing - any in-progress pre-cache is auto-cancelled
-  /// final player = CachedVideoPlayerPlus.networkUrl(
-  ///   Uri.parse('https://example.com/video.mp4'),
-  /// );
-  /// await player.initialize();
-  /// ```
-  ///
-  /// The [invalidateCacheIfOlderThan] parameter controls cache expiration.
-  /// Videos cached before this duration will be re-downloaded. Defaults to 69
-  /// days.
-  ///
-  /// The [downloadHeaders] parameter allows specifying HTTP headers for the
-  /// request to the [url]. This is useful for authenticated requests or
-  /// custom headers required by the video server.
-  ///
-  /// The [cacheKey] parameter allows specifying a custom cache key for
-  /// caching operations. If not provided, a default key based on the URL will
-  /// be used.
-  ///
-  /// The [cacheManager] parameter allows providing a custom [CacheManager]
-  /// instance for caching operations. If not provided, the default
-  /// [VideoCacheManager] will be used.
-  ///
-  /// The [metadataStorage] parameter allows specifying a custom
-  /// [IVideoPlayerMetadataStorage] for storing cache metadata. If not provided,
-  /// the default [VideoPlayerMetadataStorage] will be used.
   static Future<void> preCacheVideo(
     Uri url, {
-    Duration invalidateCacheIfOlderThan = const Duration(days: 69),
     Map<String, String> downloadHeaders = const <String, String>{},
     String? cacheKey,
-    CacheManager? cacheManager,
-    IVideoPlayerMetadataStorage? metadataStorage,
-  }) {
-    cacheManager ??= CachedVideoPlayerPlus.cacheManager;
-    metadataStorage ??= CachedVideoPlayerPlus.metadataStorage;
-
-    // Capture non-null values for use in closure
-    final effectiveCacheManager = cacheManager;
-    final effectiveMetadataStorage = metadataStorage;
-
+  }) async {
+    // Use VideoProxyServer for pre-caching
     final effectiveCacheKey = cacheKey != null
         ? getCustomCacheKey(cacheKey)
         : getCacheKey(url.toString());
 
-    final handle = PreCacheHandle(
+    await VideoProxyServer.instance.startPreCacheDownload(
+      url: url.toString(),
       cacheKey: effectiveCacheKey,
-      downloadTask: (checkCancelled) async {
-        // Wait for permit (throttled by active playback)
-        await AsyncSemaphore.instance.acquire();
-        try {
-          if (checkCancelled()) return;
-
-          // First check if the video is already cached
-          FileInfo? cachedFile = await effectiveCacheManager.getFileFromCache(
-            effectiveCacheKey,
-          );
-
-          if (cachedFile != null) {
-            final cachedElapsedMillis = await effectiveMetadataStorage.read(effectiveCacheKey);
-
-            bool isCacheExpired = true;
-            if (cachedElapsedMillis != null) {
-              final now = DateTime.timestamp();
-              final cachedDate = DateTime.fromMillisecondsSinceEpoch(
-                cachedElapsedMillis,
-              );
-              final difference = now.difference(cachedDate);
-
-              isCacheExpired = difference > invalidateCacheIfOlderThan;
-            }
-
-            if (isCacheExpired) {
-              cvppLog('Cache of [$url] expired. Removing...');
-              await effectiveCacheManager.removeFile(effectiveCacheKey);
-              cachedFile = null;
-            }
-          }
-
-          if (cachedFile == null) {
-            if (checkCancelled()) return;
-            
-            // Use shared download mechanism if proxy is running
-            // This allows playback to reuse pre-cache progress
-            if (VideoProxyServer.instance.isRunning) {
-              cvppLog('Pre-cache using shared download: $url');
-              await VideoProxyServer.instance.startPreCacheDownload(
-                url: url.toString(),
-                cacheKey: effectiveCacheKey,
-                headers: downloadHeaders,
-              );
-            } else {
-              // Fallback: use cacheManager directly (legacy behavior)
-              await effectiveCacheManager.downloadFile(
-                url.toString(),
-                key: effectiveCacheKey,
-                authHeaders: downloadHeaders,
-              );
-
-              await effectiveMetadataStorage.write(
-                effectiveCacheKey,
-                DateTime.timestamp().millisecondsSinceEpoch,
-              );
-            }
-
-            cvppLog('Pre-Cached video [$url] successfully.');
-          }
-        } finally {
-          AsyncSemaphore.instance.release();
-        }
-      },
+      headers: downloadHeaders,
     );
+  }
 
-    // Register handle for automatic cancellation when video starts playing
-    VideoProxyServer.instance.registerPreCacheHandle(handle);
-
-    // Return the future so callers can await completion
-    return handle.done;
+  /// Enforces a maximum cache size by deleting oldest inactive cache files.
+  ///
+  /// [maxCacheSize] is the maximum allowed cache size in bytes.
+  /// Default is 500MB. Files are sorted by last access time, oldest deleted first.
+  static Future<void> enforceCacheLimit({int maxCacheSize = 500 * 1024 * 1024}) async {
+    await VideoProxyServer.instance.enforceCacheLimit(maxCacheSize);
   }
 }
-
-

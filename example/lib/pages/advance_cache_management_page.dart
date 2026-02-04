@@ -1,26 +1,12 @@
 import 'package:cached_video_player_plus/cached_video_player_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
-import '../impl/memory_metadata_storage.dart';
-
-const _keyPrefix = 'cached_video_player_plus_caching_time_of_';
 
 class _VideoInfo {
   _VideoInfo(this.url, this.title);
 
   final String url;
   final String title;
-}
-
-class _CachedFileInfo {
-  _CachedFileInfo(this.fileInfo, this.cacheKey, this.cachedAt, this.size);
-
-  final FileInfo fileInfo;
-  final String cacheKey;
-  final DateTime cachedAt;
-  final int size;
 }
 
 class AdvanceCacheManagementPage extends StatefulWidget {
@@ -51,100 +37,54 @@ class _AdvanceCacheManagementPageState
       'What Car Can You Get For A Grand',
     ),
   ];
-  final _customCacheManager = CacheManager(
-    Config(
-      'CustomVideoCacheStorage',
-      stalePeriod: const Duration(days: 30),
-      maxNrOfCacheObjects: 20,
-    ),
-  );
-  final _customMetadataStorage = MemoryVideoPlayerMetadataStorage();
 
   int _selectedIndex = 0;
   String _customKey = '';
-  bool _forceFetch = false;
-  bool _overrideCacheManager = false;
-  bool _overrideMetadataStorage = false;
-  bool _isLoading = false;
   bool _isCaching = false;
-  bool _isClearing = false;
-  List<_CachedFileInfo> _cachedFiles = [];
-  int _totalCacheSize = 0;
-
-  bool get _isReady => !_isCaching && !_isClearing && !_isLoading;
+  String _statusMessage = '';
 
   @override
   void initState() {
     super.initState();
-    _fetchCacheInfo();
-  }
-
-  Future<void> _fetchCacheInfo() async {
-    setState(() => _isLoading = true);
-
-    try {
-      final metadataStorage = CachedVideoPlayerPlus.metadataStorage;
-      final allKeys = await metadataStorage.keys;
-      final videoKeys = allKeys.where((key) => key.startsWith(_keyPrefix));
-
-      final cachedFiles = await Future.wait(
-        videoKeys.map((key) async {
-          final cachedFile =
-              await CachedVideoPlayerPlus.cacheManager.getFileFromCache(key);
-          if (cachedFile == null) return null;
-
-          return _CachedFileInfo(
-            cachedFile,
-            key.replaceFirst(_keyPrefix, ''),
-            DateTime.fromMillisecondsSinceEpoch(
-              (await metadataStorage.read(key))!,
-            ),
-            await cachedFile.file.length(),
-          );
-        }),
-      );
-      _cachedFiles = cachedFiles.whereType<_CachedFileInfo>().toList();
-
-      _totalCacheSize = _cachedFiles.fold(0, (sum, c) => sum + c.size);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
   }
 
   Future<void> _cacheVideo() async {
     if (_isCaching) return;
-    setState(() => _isCaching = true);
+    setState(() {
+       _isCaching = true;
+       _statusMessage = 'Starting pre-cache...';
+    });
 
     try {
       await CachedVideoPlayerPlus.preCacheVideo(
         Uri.parse(_videoUrls[_selectedIndex].url),
-        cacheKey: _customKey,
-        invalidateCacheIfOlderThan:
-            _forceFetch ? Duration.zero : const Duration(days: 42),
+        cacheKey: _customKey.isNotEmpty ? _customKey : null,
       );
+      setState(() => _statusMessage = 'Pre-cache request sent successfully.');
+    } catch (e) {
+      setState(() => _statusMessage = 'Pre-cache failed: $e');
     } finally {
       if (mounted) setState(() => _isCaching = false);
-      _fetchCacheInfo();
     }
   }
 
   Future<void> _clearAllCache() async {
-    if (_isClearing) return;
-    setState(() => _isClearing = true);
-
+    setState(() => _statusMessage = 'Clearing cache...');
     try {
       await CachedVideoPlayerPlus.clearAllCache();
-    } finally {
-      if (mounted) setState(() => _isClearing = false);
-      _fetchCacheInfo();
+       setState(() => _statusMessage = 'Clear cache requested.');
+    } catch (e) {
+       setState(() => _statusMessage = 'Clear cache failed: $e');
     }
   }
 
   Future<void> _deleteCacheFile(String cacheKey) async {
+     setState(() => _statusMessage = 'Removing cache for key: $cacheKey...');
     try {
       await CachedVideoPlayerPlus.removeFileFromCacheByKey(cacheKey);
-    } finally {
-      _fetchCacheInfo();
+      setState(() => _statusMessage = 'Removed cache for $cacheKey');
+    } catch (e) {
+      setState(() => _statusMessage = 'Remove failed: $e');
     }
   }
 
@@ -159,6 +99,12 @@ class _AdvanceCacheManagementPageState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 12),
+            const Text(
+              'Note: File inspection is not supported with the new caching engine. '
+              'Use the controls below to manage cache.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 20),
             Row(
               children: [
                 const Text('Select Video:'),
@@ -190,72 +136,18 @@ class _AdvanceCacheManagementPageState
                 Expanded(
                   child: TextField(
                     decoration: const InputDecoration(
-                      hintText: 'Enter cache key',
+                      hintText: 'Enter cache key (optional)',
                       isDense: true,
                     ),
                     onChanged: (value) {
                       _customKey = value.trim();
-                      SchedulerBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) setState(() {});
-                      });
+                      setState(() {});
                     },
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12.0,
-              runSpacing: 12.0,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Force fetch latest:'),
-                    const SizedBox(width: 12),
-                    Switch.adaptive(
-                      value: _forceFetch,
-                      onChanged: (value) => setState(() => _forceFetch = value),
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Override default cache manager:'),
-                    const SizedBox(width: 12),
-                    Switch.adaptive(
-                      value: _overrideCacheManager,
-                      onChanged: (value) {
-                        CachedVideoPlayerPlus.cacheManager = value
-                            ? _customCacheManager
-                            : CachedVideoPlayerPlus.defaultCacheManager;
-                        setState(() => _overrideCacheManager = value);
-                        _fetchCacheInfo();
-                      },
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Override default metadata storage:'),
-                    const SizedBox(width: 12),
-                    Switch.adaptive(
-                      value: _overrideMetadataStorage,
-                      onChanged: (value) {
-                        CachedVideoPlayerPlus.metadataStorage = value
-                            ? _customMetadataStorage
-                            : CachedVideoPlayerPlus.defaultMetadataStorage;
-                        setState(() => _overrideMetadataStorage = value);
-                        _fetchCacheInfo();
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 20),
             Wrap(
               spacing: 12,
               runSpacing: 4,
@@ -266,92 +158,37 @@ class _AdvanceCacheManagementPageState
                       ? _SmallLoader()
                       : const Icon(Icons.cloud_download),
                   label: const Text('Cache It'),
-                  onPressed:
-                      _isReady && _customKey.isNotEmpty ? _cacheVideo : null,
+                  onPressed: !_isCaching ? _cacheVideo : null,
                 ),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(foregroundColor: Colors.red),
-                  icon: _isClearing ? _SmallLoader() : const Icon(Icons.delete),
-                  label: const Text('Clear All Cache'),
-                  onPressed: _isReady ? _clearAllCache : null,
-                ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    foregroundColor: Colors.amber,
-                  ),
-                  icon: _isLoading ? _SmallLoader() : const Icon(Icons.refresh),
-                  label: const Text('Refresh'),
-                  onPressed: _isReady ? _fetchCacheInfo : null,
-                ),
-              ],
-            ),
-            const Divider(height: 25),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Files: ${_cachedFiles.length}'),
-                Text(
-                  'Total Size: ${(_totalCacheSize / 1e6).toStringAsFixed(2)} MB',
-                ),
-              ],
-            ),
-            const Divider(height: 25),
-            if (_cachedFiles.isEmpty)
-              Expanded(
-                child: const Center(child: Text('No cached files found.')),
-              )
-            else if (_isLoading)
-              Expanded(
-                child: const Center(
-                  child: CircularProgressIndicator.adaptive(),
-                ),
-              )
-            else
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _cachedFiles.length,
-                  itemBuilder: (context, i) {
-                    final cacheFile = _cachedFiles[i];
-                    final file = cacheFile.fileInfo.file;
-                    final name = file.basename;
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      child: ListTile(
-                        title: Text(name),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Size: ${(cacheFile.size / 1e6).toStringAsFixed(2)} MB',
-                            ),
-                            Text('Custom Cache Key: ${cacheFile.cacheKey}'),
-                            Text(
-                              'Full Cache Key: $_keyPrefix${cacheFile.cacheKey}',
-                            ),
-                            Text('Cached at: ${cacheFile.cachedAt}'),
-                            Text(
-                              '\nPath: ${file.path}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context).hintColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                        trailing: IconButton(
-                          color: Colors.red,
-                          icon: const Icon(Icons.delete),
-                          onPressed: () {
-                            _deleteCacheFile(cacheFile.cacheKey);
-                          },
-                          tooltip: 'Delete cache file',
-                        ),
-                      ),
-                    );
+                  icon: const Icon(Icons.delete),
+                  label: const Text('Remove Selected'),
+                  onPressed: () {
+                     final key = _customKey.isNotEmpty ? _customKey : _videoUrls[_selectedIndex].url;
+                     _deleteCacheFile(key);
                   },
                 ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(foregroundColor: Colors.redAccent),
+                  icon: const Icon(Icons.delete_forever),
+                  label: const Text('Clear All'),
+                  onPressed: _clearAllCache,
+                ),
+              ],
+            ),
+            const Divider(height: 25),
+            Text('Status:', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: Text(_statusMessage.isEmpty ? 'Ready' : _statusMessage),
+            ),
           ],
         ),
       ),

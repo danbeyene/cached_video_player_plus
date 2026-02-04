@@ -1,4 +1,4 @@
-import 'pre_cache_handle.dart';
+
 
 /// Interface for the VideoProxyServer to allow for platform-specific implementations.
 abstract class VideoProxyServerInterface {
@@ -27,21 +27,6 @@ abstract class VideoProxyServerInterface {
     Map<String, String> headers = const {},
   });
 
-  /// Registers a pre-cache handle for tracking.
-  void registerPreCacheHandle(PreCacheHandle handle);
-
-  /// Cancels any in-progress pre-cache for the given cache key.
-  void cancelPreCache(String cacheKey);
-
-  /// Checks if a pre-cache is in progress for the given cache key.
-  bool isPreCaching(String cacheKey);
-
-  /// Cancels any in-progress proxy download for the given cache key.
-  void cancelDownload(String cacheKey);
-
-  /// Checks if there's an active shared download for the given cache key.
-  bool hasActiveDownload(String cacheKey);
-
   /// Starts a pre-cache download using the shared download mechanism.
   Future<void> startPreCacheDownload({
     required String url,
@@ -49,9 +34,6 @@ abstract class VideoProxyServerInterface {
     required Map<String, String> headers,
   });
 
-  /// Suspends all active pre-cache downloads to prioritize active playback.
-  void suspendAllPreCacheDownloads();
-
-  /// Resumes all suspended pre-cache downloads.
-  void resumePreCacheDownloads();
+  /// Removes the cache for the given URL.
+  Future<void> removeCache(String url);
 }
