@@ -29,7 +29,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http_cache_stream: ^0.0.4
+#  http_cache_stream: ^0.0.4
+  # get from path
+  http_cache_stream:
+    path: http_cache_stream
   http: ^1.6.0
   video_player: ^2.10.1
 

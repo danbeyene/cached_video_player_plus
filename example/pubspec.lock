@@ -183,10 +183,9 @@ packages:
   http_cache_stream:
     dependency: transitive
     description:
-      name: http_cache_stream
-      sha256: e4559875a37d95cf58117c5b4a13a41b6385c7f5db0018a7dee4ebb0641d5307
-      url: "https://pub.dev"
-    source: hosted
+      path: "../http_cache_stream"
+      relative: true
+    source: path
     version: "0.0.4"
   http_parser:
     dependency: transitive

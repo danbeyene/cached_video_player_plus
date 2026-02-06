@@ -1,0 +1,58 @@
+import 'dart:io';
+
+import 'package:http_cache_stream/src/models/http_range/http_range.dart';
+
+import '../http_range/http_range_request.dart';
+import '../http_range/http_range_response.dart';
+
+class InvalidCacheException {
+  final Uri uri;
+  final String message;
+  InvalidCacheException(this.uri, this.message);
+  @override
+  String toString() => 'InvalidCacheException: $message';
+}
+
+class CacheResetException extends InvalidCacheException {
+  CacheResetException(Uri uri) : super(uri, 'Cache reset by user request');
+}
+
+class CacheSourceChangedException extends InvalidCacheException {
+  CacheSourceChangedException(Uri uri) : super(uri, 'Cache source changed');
+}
+
+class HttpRangeException extends InvalidCacheException
+    implements HttpException {
+  HttpRangeException(
+    Uri uri,
+    HttpRangeRequest request,
+    HttpRangeResponse? response,
+  ) : super(
+          uri,
+          'Invalid Download Range Response | Request: $request | Response: $response',
+        );
+
+  static void validate(
+    final Uri url,
+    final HttpRangeRequest request,
+    final HttpRangeResponse? response,
+  ) {
+    if (response == null || !HttpRange.isEqual(request, response)) {
+      throw HttpRangeException(url, request, response);
+    }
+  }
+}
+
+class InvalidCacheLengthException extends InvalidCacheException {
+  InvalidCacheLengthException(Uri uri, int length, int expected)
+      : super(
+          uri,
+          'Invalid cache length | Length: $length, expected $expected (Diff: ${expected - length})',
+        );
+}
+
+class CacheStreamDisposedException extends StateError {
+  final Uri uri;
+  CacheStreamDisposedException(this.uri)
+      : super('HttpCacheStream disposed | $uri');
+}
