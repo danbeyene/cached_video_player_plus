@@ -1,4 +1,5 @@
 import 'package:cached_video_player_plus/cached_video_player_plus.dart';
+import 'package:cached_video_player_plus_example/widgets/fixed_material_controls.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -35,6 +36,7 @@ class _ChewieIntegrationPageState extends State<ChewieIntegrationPage> {
           videoPlayerController: _controller,
           autoPlay: true,
           looping: false,
+          customControls: const FixedMaterialControls(),
           // You can add more Chewie options here if you want to get fancy
         );
       });

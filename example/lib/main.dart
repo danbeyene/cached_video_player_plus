@@ -14,10 +14,6 @@ void main() async {
   // Windows and Linux support using `video_player_media_kit` plugin
   VideoPlayerMediaKit.ensureInitialized(windows: true, linux: true);
 
-  // Initialize the video proxy server for single-download caching
-  // This enables videos to stream while being cached simultaneously
-  await VideoProxyServer.instance.start();
-
   if(kDebugMode){
     await CachedVideoPlayerPlus.clearAllCache();
   }
@@ -32,37 +28,15 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+class _MyAppState extends State<MyApp>{
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    // Stop the proxy server when the app is disposed
-    VideoProxyServer.instance.stop();
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Handle app lifecycle for resource management
-    // - Pauses pre-cache downloads when app is backgrounded
-    // - Pre-cache resumes automatically when app is foregrounded
-    VideoProxyServer.instance.handleAppLifecycle(state);
-    
-    // IMPORTANT: Do NOT stop the proxy server when the app is paused (backgrounded).
-    //
-    // If you stop and restart the server, it will bind to a new random port.
-    // However, existing video player instances still hold the URL with the OLD port.
-    // This causes playback to fail upon resume because the player tries to connect
-    // to a closed port.
-    //
-    // Localhost servers are lightweight. It is safe and recommended to keep them
-    // running throughout the app's lifecycle.
   }
 
   @override

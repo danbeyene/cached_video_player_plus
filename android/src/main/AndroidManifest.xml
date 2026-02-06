@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="com.example.cached_video_player_plus">
+    <uses-permission android:name="android.permission.INTERNET"/>
+</manifest>

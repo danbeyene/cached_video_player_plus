@@ -21,8 +21,8 @@
 # Cached Video Player Plus
 
 The [video_player] plugin that went to therapy, worked on its commitment issues,
-and now actually remembers your videos! 🧠\
-Powered by the magic of [flutter_cache_manager] - because buffering wheels are
+and now actually remembers your videos! 🧠
+Powered by the magic of native platform caching - because buffering wheels are
 so 2010.
 
 _Like `video_player`, but with a photographic memory and trust issues with the
@@ -100,7 +100,7 @@ See `cached_video_player_plus` in action across different platforms:
 
 ```yaml
 dependencies:
-  cached_video_player_plus: ^4.1.0
+  cached_video_player_plus: ^4.2.1
   video_player: ^2.10.1 # Don't forget this one!
 ```
 
@@ -135,7 +135,6 @@ class _VideoExampleState extends State<VideoExample> {
 
     _player = CachedVideoPlayerPlus.networkUrl(
       Uri.parse('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'),
-      invalidateCacheIfOlderThan: const Duration(minutes: 69), // Nice!
     );
 
     _player.initialize().then((_) {
@@ -166,95 +165,27 @@ class _VideoExampleState extends State<VideoExample> {
 }
 ```
 
-### 5. Android Configuration 🤖
+### 5. Platform Configuration 📱
 
-Because we use a local proxy server to intercept and cache the video stream, you need to allow cleartext traffic (HTTP) for `127.0.0.1`.
+No special configuration is needed for caching to work on Android or iOS. Native caching is handled automatically by the plugin.
 
-**The Secure Way (Recommended) 🛡️**
+### 6. Lifecycle Best Practices ♻️
 
-1. Create a file `android/app/src/main/res/xml/network_security_config.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-    </domain-config>
-</network-security-config>
-```
-
-2. Point to this config in your `AndroidManifest.xml` (usually `android/app/src/main/AndroidManifest.xml`):
-
-```xml
-<application
-    ...
-    android:icon="@mipmap/ic_launcher"
-    android:label="your_app_name"
-    android:networkSecurityConfig="@xml/network_security_config"> <!-- Add this line! -->
-```
-
-_(Alternatively, you can use `android:usesCleartextTraffic="true"` for a quick fix, but that allows **all** unencrypted traffic, which is not recommended for production.)_
-
-Good news! iOS automatically allows HTTP traffic to `localhost` (127.0.0.1), so **no configuration is needed** for this to work on iOS. ATS (App Transport Security) is chill about localhost. 😎
-
-### 7. Lifecycle Best Practices ♻️
-
-**Handle app lifecycle for better resource management:**
-
-```dart
-class MyApp extends StatefulWidget {
-  const MyApp({super.key});
-
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    VideoProxyServer.instance.stop();
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Handle app lifecycle for resource management:
-    // - Pauses pre-cache downloads when app is backgrounded (saves battery/bandwidth)
-    // - Pre-cache resumes automatically when app is foregrounded
-    VideoProxyServer.instance.handleAppLifecycle(state);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(home: YourHomePage());
-  }
-}
-```
-
-> [!IMPORTANT]
-> **Do NOT stop the `VideoProxyServer` when the app is paused/backgrounded.**
->
-> The proxy server is lightweight and binds to `localhost`. If you stop it and restart it when the app resumes, it will bind to a **new random port**. However, any paused video players will still try to connect to the **old port**, causing playback to fail on resume.
->
-> **Recommendation:** Start the proxy once in `main()` and let it run until the app is fully terminated.
+Native caching handles resource management efficiently. You don't need to manually stop or manage any background services.
 
 ## 🌍 Platform Support
 
 |  Platform   | Caching | Playback | Notes                                    |
 | :---------: | :-----: | :------: | :--------------------------------------- |
-| **Android** |   ✅    |    ✅    | Full support _(chef's kiss!)_            |
-|   **iOS**   |   ✅    |    ✅    | Full support                             |
-|  **macOS**  |   ✅    |    ✅    | Full support                             |
-|   **Web**   |  ✅\*   |    ✅    | Uses browser cache _(meh...)_            |
-|  **Linux**  |   ✅    |   ✅\*   | Caching works, playback needs workaround |
-| **Windows** |   ✅    |   ✅\*   | Caching works, playback needs workaround |
+| **Android** |   ✅    |    ✅    | Native Caching via ExoPlayer             |
+|   **iOS**   |   ✅    |    ✅    | Native Caching via ResourceLoader        |
+|  **macOS**  |  ❌\*   |    ✅    | Standard playback (No native cache yet)  |
+|   **Web**   |  ✅\*   |    ✅    | Uses browser cache                       |
+|  **Linux**  |  ❌\*   |   ✅\*   | Standard playback (No native cache yet)  |
+| **Windows** |  ❌\*   |   ✅\*   | Standard playback (No native cache yet)  |
+
+> [!NOTE]
+> **Desktop Platforms**: While `video_player_media_kit` provides excellent playback for Desktop, the "Plus" native caching features are currently exclusive to mobile platforms (iOS & Android). We're working on expanding native caching support!
 
 > [!NOTE]
 >
@@ -307,7 +238,6 @@ level: 100)_
 // Pre-cache a video for instant playback later
 await CachedVideoPlayerPlus.preCacheVideo(
   Uri.parse('https://example.com/next-video.mp4'),
-  invalidateCacheIfOlderThan: const Duration(days: 42),
 );
 ```
 
@@ -341,26 +271,7 @@ await CachedVideoPlayerPlus.clearAllCache(); // *POOF* 💨
 
 ## 🚨 Known Issues _(aka "It's not a bug, it's a feature!")_
 
-### 1. `flutter_cache_manager` Override Required
-
-If you're seeing cache files not deleting properly or multiple downloads of the
-same video:
-
-**Root Cause**: The `flutter_cache_manager` with the fixed bug is not yet
-published on pub.dev, so we need to override it in our `pubspec.yaml`.
-
-**Solution**: Add the following dependency override to your `pubspec.yaml`:
-
-```yaml
-dependency_overrides:
-  flutter_cache_manager:
-    git:
-      url: https://github.com/Baseflow/flutter_cache_manager.git
-      path: flutter_cache_manager
-      ref: 54904e499a06d0364a2b3f4ca9789e5f829f1879
-```
-
-### 2. HLS and Streaming Videos Not Supported
+### 1. HLS and Streaming Videos Not Supported
 
 Sorry folks, HLS streams are like unicorns - beautiful but not cacheable! 🦄
 
@@ -374,29 +285,6 @@ possible.
 
 [Related Issue #22][issue #22]
 
-### 3. Videos Saved as .bin Files
-
-If your cached videos show up as `.bin` files instead of proper video files,
-here's the community-tested workaround:
-
-**Root Cause**: The issue occurs when servers don't provide proper
-`Content-Type` headers for video files, causing `flutter_cache_manager` to save
-them with generic `.bin` extensions.
-
-**Solution**: Override the file extension in your `flutter_cache_manager`
-configuration:
-
-```yaml
-dependency_overrides:
-  flutter_cache_manager:
-    git:
-      url: https://github.com/Oliver-WJ/flutter_cache_manager.git
-      path: flutter_cache_manager
-```
-
-For more details, check out the [issue #40] and [workaround comment]
-
-_Credit to the community detectives who tracked this down!_ 🕵️‍♂️
 
 ## 🔧 How It Works
 
@@ -629,7 +517,6 @@ _Hint: It's ASCII encoded in 8-bit binary. Good luck, brave decoder! 🤖_
 [issues_request_feature]: https://github.com/OutdatedGuy/cached_video_player_plus/issues/new?template=feature_request.yml
 [pull_requests]: https://github.com/OutdatedGuy/cached_video_player_plus/pulls
 [video_player]: https://pub.dev/packages/video_player
-[flutter_cache_manager]: https://pub.dev/packages/flutter_cache_manager
 [video_player_win]: https://pub.dev/packages/video_player_win
 [video_player_media_kit]: https://pub.dev/packages/video_player_media_kit
 [setup]: https://pub.dev/packages/video_player#setup

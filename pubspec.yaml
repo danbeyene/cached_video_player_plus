@@ -1,6 +1,6 @@
 name: cached_video_player_plus
 description: "The video_player plugin that went to therapy, worked on its commitment issues, and now actually remembers your videos!"
-version: 4.2.0
+version: 4.2.1
 homepage: https://outdatedguy.rocks
 repository: https://github.com/OutdatedGuy/cached_video_player_plus
 topics:
@@ -29,29 +29,25 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-#  http_cache_stream: ^0.0.4
-  # get from path
-  http_cache_stream:
-    path: http_cache_stream
+
   http: ^1.6.0
   video_player: ^2.10.1
+  video_player_platform_interface: ^6.2.2
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  plugin_platform_interface: ^2.1.8
   flutter_lints: ^6.0.0
 
-platforms:
-  android:
-  ios:
-  macos:
-  web:
-  linux:
-  windows:
-
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
 flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: CachedVideoPlayerPlusPlugin
+      android:
+        package: com.example.cached_video_player_plus
+        pluginClass: CachedVideoPlayerPlusPlugin
 
   # To add assets to your package, add an assets section, like this:
   # assets:

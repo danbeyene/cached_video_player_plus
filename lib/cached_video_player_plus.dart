@@ -2,11 +2,7 @@
 /// issues, and now actually remembers your videos!
 ///
 /// ## Basic Usage
-///
-/// ```dart
-/// // Initialize proxy server once at app startup
-/// await VideoProxyServer.instance.start();
-///
+
 /// final player = CachedVideoPlayerPlus.networkUrl(
 ///   Uri.parse('https://example.com/video.mp4'),
 ///   invalidateCacheIfOlderThan: const Duration(days: 42),
@@ -20,4 +16,3 @@
 library;
 
 export 'src/cached_video_player_plus.dart';
-export 'src/video_proxy_server.dart' if (dart.library.html) 'src/video_proxy_server_stub.dart';
