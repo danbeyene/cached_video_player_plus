@@ -112,6 +112,17 @@ class CachedVideoPlayerPlusPlatformAndroid extends VideoPlayerPlatform {
   }
 
   @override
+  Future<void> setCaptionOffset(int playerId, Duration delay) {
+    return _channel.invokeMethod<void>(
+      'setCaptionOffset',
+      <String, dynamic>{
+        'textureId': playerId,
+        'offset': delay.inMilliseconds,
+      },
+    );
+  }
+
+  @override
   Future<void> seekTo(int playerId, Duration position) {
     return _channel.invokeMethod<void>(
       'seekTo',

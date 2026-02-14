@@ -27,6 +27,23 @@ public class CachedVideoPlayerPlusPlugin: NSObject, FlutterPlugin {
                 return
             }
             create(args: args, result: result)
+        case "setMixWithOthers":
+            guard let args = call.arguments as? [String: Any],
+                  let mixWithOthers = args["mixWithOthers"] as? Bool else {
+                result(FlutterError(code: "invalid_args", message: "mixWithOthers argument missing", details: nil))
+                return
+            }
+            let session = AVAudioSession.sharedInstance()
+            do {
+                if mixWithOthers {
+                    try session.setCategory(.playback, mode: .default, options: .mixWithOthers)
+                } else {
+                    try session.setCategory(.playback, mode: .default, options: [])
+                }
+                result(nil)
+            } catch {
+                result(FlutterError(code: "set_category_error", message: error.localizedDescription, details: nil))
+            }
         case "clearAllCache":
             playersQueue.async {
                 CacheManager.shared.clearAllCache()
@@ -67,6 +84,14 @@ public class CachedVideoPlayerPlusPlugin: NSObject, FlutterPlugin {
             playersQueue.sync {
                 guard let player = players[textureId] else {
                     result(FlutterError(code: "unknown_player", message: "No player found for textureId \(textureId)", details: nil))
+                    return
+                }
+                
+                if call.method == "setCaptionOffset" {
+                    if let offset = args["offset"] as? Int {
+                        player.setCaptionOffset(offset)
+                    }
+                    result(nil)
                     return
                 }
                 

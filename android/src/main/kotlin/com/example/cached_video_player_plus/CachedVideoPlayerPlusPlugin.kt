@@ -190,6 +190,11 @@ class CachedVideoPlayerPlusPlugin: FlutterPlugin, MethodCallHandler {
                             player.setPlaybackSpeed(speed)
                             result.success(null)
                         }
+                        "setCaptionOffset" -> {
+                             val offset = (args?.get("offset") as? Number)?.toLong() ?: 0L
+                             player.setCaptionOffset(offset)
+                             result.success(null)
+                        }
                         "seekTo" -> {
                              val pos = (args?.get("position") as? Number)?.toInt() ?: 0
                              player.seekTo(pos)

@@ -31,6 +31,7 @@ class VideoPlayer(
     private var eventSink: EventChannel.EventSink? = null
     private var surface: Surface? = null
     private var isInitialized = false
+    private var captionOffset: Long = 0L
 
     init {
         setupEventChannel()
@@ -212,6 +213,10 @@ class VideoPlayer(
             .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
             .build()
         exoPlayer?.setAudioAttributes(audioAttributes, !mixWithOthers)
+    }
+
+    fun setCaptionOffset(offset: Long) {
+        captionOffset = offset
     }
 
     fun seekTo(location: Int) {

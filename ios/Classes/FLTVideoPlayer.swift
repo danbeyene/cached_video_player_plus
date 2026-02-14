@@ -14,6 +14,7 @@ class FLTVideoPlayer: NSObject, FlutterTexture {
     var textureId: Int64 = -1
     private var isLooping = false
     private var isInitialized = false
+    private var captionOffset: Int = 0
     
     init(uri: String, registrar: FlutterPluginRegistrar) {
         self.registrar = registrar
@@ -206,6 +207,11 @@ class FLTVideoPlayer: NSObject, FlutterTexture {
                 setVolume(volume)
             }
             result(nil)
+        case "setCaptionOffset":
+            if let args = call.arguments as? [String: Any], let offset = args["offset"] as? Int {
+                setCaptionOffset(offset)
+            }
+            result(nil)
         case "seekTo":
             if let args = call.arguments as? [String: Any], let position = args["position"] as? Int {
                 seek(to: position)
@@ -248,6 +254,10 @@ class FLTVideoPlayer: NSObject, FlutterTexture {
         player?.rate = Float(speed)
     }
     
+    func setCaptionOffset(_ offset: Int) {
+        captionOffset = offset
+    }
+
     func seek(to position: Int) {
         let time = CMTimeMake(value: Int64(position), timescale: 1000)
         player?.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
