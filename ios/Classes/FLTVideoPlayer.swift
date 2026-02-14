@@ -58,11 +58,11 @@ class FLTVideoPlayer: NSObject, FlutterTexture {
             asset = AVURLAsset(url: url)
         }
         
-        playerItem = AVPlayerItem(asset: asset)
+        playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: ["duration", "tracks", "preferredTransform"])
         player = AVPlayer(playerItem: playerItem)
         
         if #available(iOS 10.0, *) {
-            player?.automaticallyWaitsToMinimizeStalling = false
+            player?.automaticallyWaitsToMinimizeStalling = true
         }
         
         setupVideoOutput()
@@ -140,6 +140,9 @@ class FLTVideoPlayer: NSObject, FlutterTexture {
         event["width"] = width
         event["height"] = height
         _eventSink?(event)
+        
+        // Optimization: Manually trigger a frame update so the first frame is visible immediately.
+        registrar.textures().textureFrameAvailable(textureId)
     }
     
     @objc func itemDidPlayToEndTime() {
@@ -176,7 +179,7 @@ class FLTVideoPlayer: NSObject, FlutterTexture {
     
     private func setupDisplayLink() {
         displayLink = CADisplayLink(target: self, selector: #selector(onDisplayLink(_:)))
-        displayLink?.add(to: .current, forMode: .common)
+        displayLink?.add(to: .main, forMode: .common)
         displayLink?.isPaused = true
     }
     

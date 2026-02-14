@@ -66,44 +66,44 @@ class VideoPlayer(
             .setLoadControl(loadControl)
             .build()
         
-        val uri = Uri.parse(dataSource)
+        prepareMediaSource(Uri.parse(dataSource))
         
-        // Prepare DataSource capable of Caching
-        val cacheManager = CacheManager.getInstance(context)
+        setupListeners()
+        
+        // Optimize: Use minimum size initially to reduce buffer allocation pressure.
+        textureEntry.setSize(1, 1)
+        surface = textureEntry.surface
+        exoPlayer?.setVideoSurface(surface)
+        
+        exoPlayer?.prepare()
+    }
+
+    private fun prepareMediaSource(uri: Uri) {
+        val isNetwork = dataSource.startsWith("http") || dataSource.startsWith("https")
         
         // Upstream (Network)
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
         
-        // Base factor for all URIs (assets, files, content://)
+        // Base factory for all URIs (assets, files, content://)
         val defaultDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
 
-        // Cache Layer wrapping the default factory
-        val cacheDataSourceFactory = CacheDataSource.Factory()
-            .setCache(cacheManager.simpleCache)
-            .setUpstreamDataSourceFactory(defaultDataSourceFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR) 
-        
-        // Media Source
-        val mediaItem = MediaItem.fromUri(uri)
-        
-        // If it is network, use cache factory.
-        if (dataSource.startsWith("http") || dataSource.startsWith("https")) {
+        if (isNetwork) {
+            // Lazy-load CacheManager only for network sources. 
+            // This avoids assets waiting for background cache directory initialization.
+            val cacheManager = CacheManager.getInstance(context)
+            val cacheDataSourceFactory = CacheDataSource.Factory()
+                .setCache(cacheManager.simpleCache)
+                .setUpstreamDataSourceFactory(defaultDataSourceFactory)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR) 
+            
             val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(cacheDataSourceFactory)
-            exoPlayer?.setMediaSource(mediaSourceFactory.createMediaSource(mediaItem))
+            exoPlayer?.setMediaSource(mediaSourceFactory.createMediaSource(MediaItem.fromUri(uri)))
         } else {
-             // Local file / asset - use default factory (no cache)
+            // Local file / asset - use default factory (no cache)
             val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(defaultDataSourceFactory)
-            exoPlayer?.setMediaSource(mediaSourceFactory.createMediaSource(mediaItem))
+            exoPlayer?.setMediaSource(mediaSourceFactory.createMediaSource(MediaItem.fromUri(uri)))
         }
-        
-        setupListeners()
-        
-        textureEntry.setSize(1080, 1920)
-        surface = textureEntry.surface
-        exoPlayer?.setVideoSurface(surface)
-        
-        exoPlayer?.prepare()
     }
 
     private fun setupListeners() {
@@ -117,6 +117,8 @@ class VideoPlayer(
                          if (!isInitialized) {
                              isInitialized = true
                              sendInitialized()
+                             // Optimization: Trigger immediate frame available so the first frame shows up even if paused.
+                             textureEntry.onFrameAvailable()
                          }
                     }
                     Player.STATE_ENDED -> {
