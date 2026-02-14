@@ -117,8 +117,6 @@ class VideoPlayer(
                          if (!isInitialized) {
                              isInitialized = true
                              sendInitialized()
-                             // Optimization: Trigger immediate frame available so the first frame shows up even if paused.
-                             textureEntry.onFrameAvailable()
                          }
                     }
                     Player.STATE_ENDED -> {
